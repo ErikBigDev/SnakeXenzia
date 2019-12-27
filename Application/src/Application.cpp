@@ -10,31 +10,14 @@
 #include <vector>
 #include <algorithm>
 #include <functional>
+#include <iomanip>
 #include "Block.h"
 
 using namespace std::literals::chrono_literals;
 
-class Timer {
-public:
-	std::chrono::time_point<std::chrono::steady_clock> start, end;
-	std::chrono::duration<float> duration;
-	float ms;
-
-	Timer() {
-		start = std::chrono::high_resolution_clock::now();
-	}
-
-	~Timer()
-	{
-		end = std::chrono::high_resolution_clock::now();
-		duration = end - start;
-		ms = duration.count() * 1000.0f;
-
-		std::wcout << ms << "\n";
-	}
-};
-
 static std::array<std::array<Block, x>, y> blocks;
+static bool control = false;
+static bool bar = false;
 //std::array<Block*, x*y> snake;
 
 void Iterate(_Inout_ std::array<std::array<Block, x>, y>& arr, _In_ std::function<void(Block&, int, int)> iterate) {
@@ -76,7 +59,7 @@ template<typename T>
 void WriteAt(T contents, COORD coords) {
 	//Timer timer;
 	SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), coords);
-	std::wcout << contents;
+	std::wcout << std::fixed << std::setprecision(2) << contents;
 	//SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), {0, 0});
 }
 
@@ -136,6 +119,7 @@ void FillArray() {
 	blocks[(y / 2) - 1][(x / 2) - 1].SetAbsoluteType(BlockType::Tail, 1);
 	blocks[(y / 2) - 1][(x / 2) - 2].SetAbsoluteType(BlockType::Head, 2);
 	blocks[(y / 2) - 1][(x / 2) - 3].SetAbsoluteType(BlockType::Food);
+	//Block::timer = new Timer;
 }
 
 void Swap(std::vector<COORD>& coords, int index1, int index2) {
@@ -147,7 +131,7 @@ void Swap(std::vector<COORD>& coords, int index1, int index2) {
 std::vector<COORD> GetImportantBlocks() {
 	std::vector<COORD> coords;
 	Iterate(blocks, [&coords](Block& block, int Y, int X) {
-		if (blocks[Y][X].GetBlockType() == BlockType::Head || blocks[Y][X].GetBlockType() == BlockType::Tail || blocks[Y][X].GetBlockType() == BlockType::Food)
+		if (blocks[Y][X].GetBlockType() == BlockType::Head || blocks[Y][X].GetBlockType() == BlockType::Tail || blocks[Y][X].GetBlockType() == BlockType::Food || blocks[Y][X].GetBlockType() == BlockType::FoodSpecial)
 			coords.push_back({ (SHORT)X, (SHORT)Y });
 		});
 	
@@ -162,16 +146,10 @@ std::vector<COORD> GetImportantBlocks() {
 }
 
 void Controls() {
-	
-	while (true)
-		GetAsyncKeyState(VK_UP);
-		GetAsyncKeyState(VK_DOWN);
-		GetAsyncKeyState(VK_LEFT);
-		GetAsyncKeyState(VK_RIGHT);
 
-	/*while (true)
+
+	while (control)
 	{
-
 		if (GetAsyncKeyState(VK_UP) == -32767 && Block::GetDirection().first != VK_DOWN && Block::GetDirection().first != VK_UP) {
 			Block::SetDirection(Direction::Up);
 			continue;
@@ -188,50 +166,167 @@ void Controls() {
 			Block::SetDirection(Direction::Right);
 			continue;
 		}
+	}
 
-	}*/
+	return;
+}
+
+void Bar() {
+	int timerPercent = 0;
+
+	while (bar)
+	{
+		if (Block::timer != NULL)
+			timerPercent = round(((Block::timer->Stop() + 1) / 2000.0f) * 100.0f);
+
+		for (int i = 0; i < 100; i += 5)
+		{
+			if (Block::timer == NULL) {
+				WriteAt("                      ", { 15, y });
+				break;
+			}
+			else if (timerPercent == 0)
+			{
+				WriteAt("[                    ]", { 15, y });
+				break;
+			}
+
+			if (timerPercent <= i) {
+				WriteAt("[", { 15, y });
+
+				for (int j = i; j > 0; j -= 5)
+				{
+					WriteAt('=', { 15 + (SHORT)j / 5, y });
+					if(j / 5 == 34 - 15)
+						WriteAt('=', { 35, y });
+				}
+
+				for (int k = i; k < 10; k += 5)
+				{
+					WriteAt(' ', { 16 + (SHORT)k / 5, y });
+				}
+
+				WriteAt("]", { 36, y });
+
+				break;
+			}
+		}
+		Sleep(70);
+	}
+	WriteAt("                      ", { 15, y });
 }
 
 void Tick() {
 	auto start = std::chrono::high_resolution_clock::now();
-	
-	{
-		std::vector<COORD> coords = GetImportantBlocks();
-			
-		for (COORD c : coords)
-			blocks[c.Y][c.X].Move(blocks, c);
+	///////////////////////////////////////////////////////
 
-		coords = GetImportantBlocks();
+	std::vector<COORD> coords = GetImportantBlocks();
 
-		srand(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+	for (COORD c : coords)
+		blocks[c.Y][c.X].Move(blocks, c);
 
-		bool foodIs;
+	coords = GetImportantBlocks();
 
-		FillConsoleAt(blocks, { 0, 0 });
-		for (COORD c : coords) {
-			if (blocks[c.Y][c.X].GetBlockType() == BlockType::Food) {
-				foodIs = true;
-				break;
-			}
-			else foodIs = false;
+	srand(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+
+	bool foodIs;
+
+	for (COORD c : coords) {
+		if (blocks[c.Y][c.X].GetBlockType() == BlockType::Food || blocks[c.Y][c.X].GetBlockType() == BlockType::FoodSpecial) {
+			foodIs = true;
+			break;
 		}
-		while (true) {
-			Block& b = blocks[rand() % y][rand() % x];
-			if (b.GetBlockType() == BlockType::Floor && !foodIs) {
+		else foodIs = false;
+	}
+	while (true) {
+		Block& b = blocks[rand() % y][rand() % x];
+		if (b.GetBlockType() == BlockType::Floor && !foodIs) {
+			if ((rand() % 20) == 0) {
+				b.SetAbsoluteType(BlockType::FoodSpecial);
+				Block::timer = new Timer;
+			}
+			else
 				b.SetAbsoluteType(BlockType::Food);
-				break;
-			}
-			else if (foodIs)
-				break;
+			break;
 		}
+		else if (foodIs)
+			break;
 
-
-		FillConsoleAt(blocks, { 0, 0 });
 	}
 
+
+	FillConsoleAt(blocks, { 0, 0 });
+
+	int n = Block::score;
+	int count = 0;
+
+	while (n != 0) {
+		n = n / 10;
+		count++;
+	}
+
+
+
+	for (int i = 0; i < 7 - count; i++)
+	{
+		WriteAt('0', {(SHORT)i, y});
+	}
+	
+	WriteAt(Block::score, { (SHORT)(7 - count), y });
+	
+	bar = true;
+	std::thread work(Bar);
+
+	/*int timerPercent = 0;
+
+	if (Block::timer != NULL)
+		timerPercent = round(((Block::timer->Stop() + 1) / 2000.0f) * 100.0f);
+
+	for (int i = 0; i < 100; i += 5)
+	{
+		if (Block::timer == NULL) {
+			break;
+		}
+		else if (timerPercent == 0)
+		{
+			WriteAt("[                    ]", { 15, y });
+			break;
+		}
+
+		if (timerPercent <= i) {
+			WriteAt("[", { 15, y });
+
+			for (int j = i; j > 0; j -= 5)
+			{
+				WriteAt('=', { 15 + (SHORT)j / 5, y });
+			}
+
+			for (int k = i; k < 10; k += 5)
+			{
+				WriteAt(' ', { 16 + (SHORT)k / 5, y });
+			}
+
+			WriteAt("]", { 36, y });
+
+			break;
+		}
+	}*/
+
+	control = true;
+	std::thread worker(Controls);
+	
+
+	///////////////////////////////////////////////////////
 	auto end = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<float> duration = end - start;
-	Sleep(500.0f - (duration.count() * 1000.0f));
+	Sleep(300.0f - (duration.count() * 1000.0f));
+
+	control = false;
+	worker.join();
+
+	bar = false;
+	work.join();
+
 }
 
 int main() {
@@ -244,26 +339,19 @@ int main() {
 	GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &prev_mode);
 	SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), prev_mode & ~ENABLE_ECHO_INPUT);
 
-	//std::thread controls(Controls);
+	SMALL_RECT windowSize = { 0, 0, x, y + 1 };
+	SetConsoleWindowInfo(GetStdHandle(STD_OUTPUT_HANDLE), true, &windowSize);
+
 
 	FillArray();
 
-	//FillConsoleAt(blocks, { 0, 0 });
+	//std::thread work(Bar);
+	//std::thread worker(Controls);
+
+	FillConsoleAt(blocks, { 0, 0 });
 
 	while (true)
 		Tick();
-
-	std::array<int, 5> arr = {1, 2, 3, 4, 5};
-	std::sort(arr.begin(), arr.end(), [](int a, int b) {
-		if (a == 2)
-			return true;
-		if (b == 2)
-			return false;
-
-		return a > b;
-		});
-	for (int i : arr)
-		std::wcout << i << "\n";
 
 	std::cin.get();
 	return 0;

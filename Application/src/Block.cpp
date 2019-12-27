@@ -4,6 +4,8 @@ Direction Block::direction = Direction::Left;
 Direction Block::prevDirection = Direction::Left;
 int Block::maxSize = 2;
 bool Block::maxSizeChanged = false;
+int Block::score = 0;
+Timer* Block::timer = NULL;
 
 Block::Block(BlockType bt, bool b, int tn) : changed(b), tailNumber(tn = 0), blockType(bt), wallType(WallType::None)
 {
@@ -82,7 +84,14 @@ void Block::Move(std::array<std::array<Block, x>, y>& blocks, COORD coords) {
 		Block::SetDirection(Direction::Right);
 	}
 
-	if (Directify(blocks, coords).blockType == BlockType::Tail && blockType == BlockType::Head) {
+	if (blockType == BlockType::FoodSpecial && (timer->Stop()) >= 2000) {
+		SetAbsoluteType(BlockType::Floor);
+		delete timer;
+		timer = NULL;
+		return;
+	}
+
+	if (Directify(blocks, coords).blockType == BlockType::Tail && blockType == BlockType::Head) {	
 		direction = prevDirection;
 		//return;
 	}
@@ -97,8 +106,17 @@ void Block::Move(std::array<std::array<Block, x>, y>& blocks, COORD coords) {
 		return;
 	}
 
-	if (Directify(blocks, coords).blockType == BlockType::Food && blockType == BlockType::Head)
+	if ((Directify(blocks, coords).blockType == BlockType::Food || Directify(blocks, coords).blockType == BlockType::FoodSpecial) && blockType == BlockType::Head)
 	{
+		if (Directify(blocks, coords).blockType == BlockType::Food)
+			score += 8;
+		else if (Directify(blocks, coords).blockType == BlockType::FoodSpecial) {
+			int ms = timer->Stop();
+			if (ms < 2000)
+				score =+ round(ms / 7.0f);
+			delete timer;
+			timer = NULL;
+		}
 		maxSizeChanged = true;
 		maxSize++;
 		Directify(blocks, coords).SetAbsoluteType(BlockType::Head, maxSize);
@@ -129,9 +147,42 @@ void Block::Move(std::array<std::array<Block, x>, y>& blocks, COORD coords) {
 Block& Block::Directify(std::array<std::array<Block, x>, y>& blocks, COORD coords) {
 	switch (Block::direction)
 	{
-	case Direction::Up: return blocks[coords.Y - 1][coords.X];
-	case Direction::Down: return blocks[coords.Y + 1][coords.X];
-	case Direction::Left: return blocks[coords.Y][coords.X - 1];
-	case Direction::Right: return blocks[coords.Y][coords.X + 1];
+	case Direction::Up: //return blocks[coords.Y - 1][coords.X];
+		if (blocks[coords.Y - 1][coords.X].blockType == BlockType::Wall && coords.Y == 1) {
+			return blocks[y - 2][coords.X];
+		}
+		else
+			return blocks[coords.Y - 1][coords.X];
+
+	case Direction::Down: //return blocks[coords.Y + 1][coords.X];
+		if (blocks[coords.Y + 1][coords.X].blockType == BlockType::Wall && coords.Y == y - 2) {
+			return blocks[1][coords.X];
+		}
+		else
+			return blocks[coords.Y + 1][coords.X];
+
+	case Direction::Left: //return blocks[coords.Y][coords.X - 1];
+		if (blocks[coords.Y][coords.X - 1].blockType == BlockType::Wall && coords.X == 1) {
+			return blocks[coords.Y][x - 2];
+		}
+		else
+			return blocks[coords.Y][coords.X - 1];
+
+	case Direction::Right: //return blocks[coords.Y][coords.X + 1];
+		if (blocks[coords.Y][coords.X + 1].blockType == BlockType::Wall && coords.X == x - 2) {
+			return blocks[coords.Y][1];
+		}
+		else
+			return blocks[coords.Y][coords.X + 1];
+	}
+}
+
+COORD Block::DirectifyCoords(COORD coords) {
+	switch (Block::direction)
+	{
+	case Direction::Up: return { coords.X, coords.Y - 1 };
+	case Direction::Down: return { coords.X, coords.Y + 1};
+	case Direction::Left: return { coords.X - 1, coords.Y, };
+	case Direction::Right: return { coords.X + 1, coords.Y, };
 	}
 }
